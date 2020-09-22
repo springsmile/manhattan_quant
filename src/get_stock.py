@@ -51,13 +51,15 @@ class GetStock:
         while (rs.error_code == '0') & rs.next():
             # 获取一条记录，将记录合并在一起
             data_list.append(rs.get_row_data())
-        return data_list
 
-    def save_data_file(self, data, columns):
+        df = pd.DataFrame(data_list, columns=rs.fields)
+        return df
+
+    def save_data_file(self, df, fpath = ""):
         #### 结果集输出到csv文件 ####
-        result = pd.DataFrame(data, columns=columns)
-        result.to_csv("../data/history_A_stock_k_data.csv", index=False)
-        print(result)
+        if fpath == "":
+            fpath = self.cfg.csv_path
+        df.to_csv(fpath, index=False)
 
     def logout_bs(self, _bs):
         #### 登出系统 ####
@@ -65,10 +67,14 @@ class GetStock:
 
     def get_data(self):
         _bs = self.login_bs()
-        _rs = self.request_data(_bs, stock_code= self.cfg.stock_code)
-        data = self.format_data(_rs)
-        print(data)
-        # self.save_data_file(data, columns=_rs.fields)
+        # _rs = self.request_data(_bs, stock_code= self.cfg.stock_code)
+        _rs = self.request_data(_bs, stock_code=self.cfg.stock_code,
+                                start_date= self.cfg.start_date,
+                                end_date=self.cfg.end_date)
+
+        df = self.format_data(_rs)
+        print(df)
+        self.save_data_file(df)
         self.logout_bs(_bs)
 
 
