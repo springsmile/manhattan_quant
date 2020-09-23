@@ -128,7 +128,6 @@ class StrategicStock:
         """
         principal = 100000
 
-        for
 
 
 
