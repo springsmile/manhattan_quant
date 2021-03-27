@@ -1,0 +1,149 @@
+import os,sys
+import jieba
+import pandas as pd
+from tqdm import tqdm 
+from filter_corpus import filter_corpus
+
+class nlupm:
+    def __init__(self, \
+        KEYWORDS_PATHS = [],\
+        CORPUS_PATHS = [],\
+        COVER_RATIO = 0.95, \
+        FREQUENCY_NUM = 100):
+
+        """
+        KEYWORDS_PATHS = ['keywords/' + f for f in os.listdir('keywords/')], \
+        CORPUS_PATHS = ['corpus/' + f for f in os.listdir('corpus/')], \
+        COVER_RATIO = 0.95, \
+        FREQUENCY_NUM = 2):
+        """
+        self.KEYWORDS_PATHS = KEYWORDS_PATHS
+        self.CORPUS_PATHS = CORPUS_PATHS
+        self.COVER_RATIO = COVER_RATIO
+        self.FREQUENCY_NUM = FREQUENCY_NUM
+
+
+    def load_cp_keywords(self, jba):
+        cp_keywords = {}
+        for fpath in self.KEYWORDS_PATHS:
+            fname = os.path.basename(fpath)
+            jba.load_userdict(fpath)
+            k = '[%s]'%(fname.split('.')[0])
+            cp_keywords[k] = [x.split('\n')[0] for x in open(fpath, 'r', encoding='utf-8').readlines()]
+        return cp_keywords, jba
+
+    def read_cp_keywords(self):
+        cp_keywords = {}
+        for fpath in self.KEYWORDS_PATHS:
+            fname = os.path.basename(fpath)
+            k = '[%s]'%(fname.split('.')[0])
+            cp_keywords[k] = [x.split('\n')[0] for x in open(fpath, 'r', encoding='utf-8').readlines()]
+        return cp_keywords
+
+    def load_corpus(self):
+        corpus = []
+        for fpath in self.CORPUS_PATHS:
+            fname = os.path.basename(fpath)
+            corpus += [x.split('\n')[0] for x in open(fpath, 'r', encoding='utf-8').readlines()]
+        return corpus
+
+    def get_frequency_words(self,querys_words, alpha, N_thre):
+        """
+        alpha:  最大阈值
+        N_thre:  最大允许频繁词数
+        """
+        tp = pd.Series([v2 for v1 in querys_words for v2 in set(v1)]).value_counts()
+
+        ## 二分查找
+        left_i, right_i = 0, min(N_thre, len(tp))
+        cover_num =  alpha*(tp.sum())
+        while left_i < right_i:
+            if tp[:right_i].sum() > cover_num:
+                N = int((left_i + right_i)/2)
+                if tp[:N].sum() < cover_num:
+                    left_i = N
+                else:
+                    right_i = N
+            else:
+                N = right_i
+                break 
+        
+        return tp[:N].index
+
+    def replaceKeyword(self, query_words,cp_keywords, frequency_words):
+        val_ls = []
+        for i, w in enumerate(query_words):
+            flag = 0
+            for k in cp_keywords:
+                if w in cp_keywords[k]:
+                    val = k
+                    flag = 1
+                    break
+            if flag == 0:
+                if w in frequency_words:
+                    val = w
+                else:
+                    val = 'x'
+            val_ls.append(val)
+        return val_ls
+
+    def mergePlaceholder(self, val_list, ph):
+        i = len(val_list) - 1
+        while(i>0):
+            if val_list[i]== ph and val_list[i - 1] == ph:
+                val_list.pop(i)
+            i -= 1
+        return val_list
+    
+    def write_file(self, fpath, data):
+        f = open(fpath,'w', encoding='utf-8')
+        for val in data:
+            f.write(str(val) + '\n')
+        f.close()
+
+    def main(self):
+        """
+        输入语料地址， CP关键词地址
+        1. 将关键词集K1,K2,... 等load到jieba
+        2. 对语料query切词
+        3. 取词频最高的非关键词频繁集S (S能命中95%的语料)
+        4. 将query以 P = p1<->p2<->...<->pn, 组合的形式表示
+            其中pn 属于{Si, 'x', 'K1','K2'}
+        5. 取P 的频繁集合(P能命中70%的语料)
+        :return:
+        """
+        jba = jieba
+        cp_keywords, jba = self.load_cp_keywords(jba)
+        corpus_query = self.load_corpus()
+        print('1-corpus loaded')
+        df = pd.DataFrame(columns=['query'], data = corpus_query)
+        df['tk'] = df['query'].apply(lambda x: list(jieba.tokenize(x)))
+        print('2-query tokenized')
+        df['tk_w'] = df['tk'].apply(lambda x: [v[0] for v in x])
+        frequency_words = self.get_frequency_words(df['tk_w'], self.COVER_RATIO, self.FREQUENCY_NUM)
+        print('3-frequency words get')
+        tp = df['tk_w'].apply(lambda x: '<->'.join(self.mergePlaceholder(self.replaceKeyword(x,cp_keywords, frequency_words), 'x')))
+        tp = tp.value_counts()
+        tp = [str(tp.index[i]) + '\t'+ str(tp.iloc[i]) for i in range(len(tp))] 
+
+        base_path = os.path.dirname(self.CORPUS_PATHS[0])
+        module_path = os.path.join(base_path, 'module.txt')
+        self.write_file(module_path,tp)
+        return module_path
+
+
+'''
+B = nlupm()
+B.KEYWORDS_PATHS = ['keywords/' + f for f in os.listdir(os.getcwd() + '/keywords/')]
+B.CORPUS_PATHS = ['corpus/' + f for f in os.listdir(os.getcwd() + '/corpus/')]
+B.COVER_RATIO = 0.95
+B.FREQUENCY_NUM = 2
+'''
+if __name__ == '__main__':
+    ##filter_corpus()
+    A = nlupm()
+    A.KEYWORDS_PATHS = ['keywords/' + f for f in os.listdir(os.getcwd() + '/keywords/')]
+    A.CORPUS_PATHS = ['corpus/' + f for f in os.listdir(os.getcwd() + '/corpus/')]
+    A.COVER_RATIO = 0.95
+    A.FREQUENCY_NUM = 2
+    A.main()
